@@ -280,12 +280,24 @@ class Image():
 
         ### Custom module order (Only for the bad module)
         cust_order = []
-        cust_mod_order = Module_Order(self.cust_modules, "shipped", self.extracted_fs_dir)
-        cust_mod_order.get_order_recursive(module_path)
-        cust_order = cust_mod_order.order
-        #cust_order = get_mod_order(module_path, self.cust_modules,
-                            #cust_order, "shipped", paramz)
-
+        # We know the correct order of the distributed/shipped kernel modules
+        # up until the crashing module of interest from stage1
+        info = cu.get_image_info(self.img, "all")
+        all_mod_order = info['modules']
+        for indx, module_path in enumerate(all_mod_order):
+            mod = module_path.split("/")[-1]
+            if module == mod: break
+        
+        # We want to discard any potential non dependencies of the current
+        # crashing module under test, that also crashed
+        # However we have to add the current crashing module at the end of
+        # the dependency list
+        for path in all_mod_order[:indx +1]:
+            mod = path.split("/")[-1]
+            if mod not in self.bad_cust_mods:
+                cust_order.append(path)
+        cust_order.append(all_mod_order[indx])
+ 
         ### Upstream module order (The corresponding upstream module)
         ups_order = []
         ups_mod_order = Module_Order([module], "vanilla", self.extracted_fs_dir,
@@ -730,7 +742,7 @@ class Image():
         print("Compilation Command",compile_cmd)
 
         try:
-            res = subprocess.run(compile_cmd,stdout=subprocess.PIPE, stderr=subprocess.PIPE,shell=True, timeout = 300)
+            res = subprocess.run(compile_cmd,stdout=subprocess.PIPE, stderr=subprocess.PIPE,shell=True, timeout = 600)
         except:
             print(traceback.format_exc())
             pass
@@ -929,13 +941,23 @@ class Image():
         actual_offsets, struct_size = self.get_offsets(random_module, "struct module",\
                 members_accessed, {"(*init)(void)" : 1, "(*exit)(void)" : 1}, False)
         
+        ### We first need to map corrctly the offsets to init_module and cleanup_module
+        ### Cleanup module is always after init_module so it has a larger offset
+        keys = list(struct_module_layout.keys())
+        if struct_module_layout[keys[0]] < struct_module_layout[keys[1]]:
+            init_module = keys[0]
+            cleanup_module = keys[1]
+        else:
+            init_module = keys[1]
+            cleanup_module = keys[0]
+    
         ### Case where struct module is correctly aligned just return
-        if int(actual_offsets["(*init)(void)"]) == int(struct_module_layout["init_module"]) and \
-                int(actual_offsets["(*exit)(void)"]) == int(struct_module_layout["cleanup_module"]) and \
+        if int(actual_offsets["(*init)(void)"]) == int(struct_module_layout[init_module]) and \
+                int(actual_offsets["(*exit)(void)"]) == int(struct_module_layout[cleanup_module]) and \
                 struct_size == target_size:
                     print("Struct module for", self.img, "is already aligned")
                     return None
-        target_offsets = {"(*init)(void)" : struct_module_layout["init_module"], "(*exit)(void)": struct_module_layout["cleanup_module"]}
+        target_offsets = {"(*init)(void)" : struct_module_layout[init_module], "(*exit)(void)": struct_module_layout[cleanup_module]}
         ### First get which options are not enabled
         not_enabled_opts, extra_opts = \
                           get_struct_conditionals(self, None,
@@ -964,7 +986,7 @@ class Image():
 
         print("In tree module", in_tree_module)
         solution = []
-        if int(actual_offsets["(*exit)(void)"]) > int(struct_module_layout["cleanup_module"]):
+        if int(actual_offsets["(*exit)(void)"]) > int(struct_module_layout[cleanup_module]):
             negate = True
         else:
             negate = False
@@ -1227,7 +1249,7 @@ class Image():
                     print(traceback.format_exc())
                     found = False
 
-                if found and set(sorted(self.solution)) not in self.bad_solutions:
+                if found and tuple(sorted(self.solution)) not in self.bad_solutions:
                     return True
                 self.solution.pop(-1)
                 ### Call once with current element included
@@ -1493,7 +1515,7 @@ def first_dry_run(c_img, cust_mod_deps):
     proc = mp.Process(target = exec_scenario, args = \
                             (pexp, cust_mod_deps, queue,))
     proc.start()
-    proc.join()
+    proc.join(timeout=10)
     
     section_info = []
     call_trace = []
@@ -1756,7 +1778,13 @@ def analyze_modules(c_img, crashing_module, ups_mods_order, crash_mods_order,
             in_which_mod = sub[1]
     
     crashing_mod_path = "{}{}".format(c_img.extracted_fs_dir, in_which_mod)
-    upstream_mod_path = temp_dict[in_which_mod.split("/")[-1]]
+    try:
+        upstream_mod_path = temp_dict[in_which_mod.split("/")[-1]]
+    except:
+        # Silent dependency. The dependency is not present in the .modinfo section
+        # However the crashing module uses a symbol from another module, which in
+        # this case is not an upstream module. So nothing dslc can do about it
+        return None, None, None, None, None, False, None, in_which_mod
     
     ups_param_dict, crash_param_dict, ups_var_dict, crash_var_dict, ups_param_types = \
                 None, None, None, None, None
@@ -2035,8 +2063,11 @@ def get_static_crash_data(cust_deps, module_info):
         try:
             output = module_info[dep_name]
         except:
-            dep_name = dep_name.replace("-","_")
-            output = module_info[dep_name]
+            try:
+                dep_name = dep_name.replace("-","_")
+                output = module_info[dep_name]
+            except:
+                continue
 
         for line in output:
             ln = line.strip("\r\r")
@@ -2353,6 +2384,16 @@ def analyze_image_modules(c_img):
         print("In tree module", in_tree_module)
         
         print("NEGATE", negate, not_enabled_opts)
+        # Put the locking related options at the end of the probable solutions
+        # to make the solution finder algo faster. Vendors rarely use them
+        templist = []
+        for opt in not_enabled_opts:
+            if "LOCK" in opt:
+                templist.append(opt)
+        for opt in templist:
+            not_enabled_opts.remove(opt)
+        not_enabled_opts += templist
+
         try:
             found = c_img.solution_finder_recursive(not_enabled_opts, {}, initial_ofsts, target_ofsts, in_tree_module, candidate_struct, members_accessed, c_img, module_subdir, 0 , negate, member_pos, negated)
         except:
@@ -2415,8 +2456,10 @@ def layout_correct(image, infile, serial_out, fi_opts):
         tested_struct_module = False
         stored_module_solution = False
         bad_struct_module_solutions = []
-        bad_solutions = []
+        bad_solutions = set()
         crashed_modules_firmadyne = []
+        # Try to not fall into an infinite loop of testing for solutions
+        times_tested = 0
         while True:
             try:
                 c_img = Image(image, kernel, arch, endian, vermagic,
@@ -2446,6 +2489,12 @@ def layout_correct(image, infile, serial_out, fi_opts):
             elif not c_img.bad_cust_mods and serial_output != []:
                 c_img.bad_cust_mods = crashed_modules_firmadyne
 
+            # If we test more than 3 times with the same solutions exit to not fall into
+            # an infinite loop
+            if times_tested > 2:
+                print("No additional solution can be found for image's", c_img.img, "modules")
+                break
+
             if not solution and prev_bad_modules == set(c_img.bad_cust_mods) and tested_struct_module:
                 print("No additional solution can be found for image's", c_img.img, "modules")
                 break
@@ -2458,11 +2507,13 @@ def layout_correct(image, infile, serial_out, fi_opts):
 
                 save_solution(c_img, solution)
                 solution_buffer += solution
-                bad_solutions = []
+                ### We do not want to see the same solution again though so put it in the bad solutions as well 
+                bad_solutions.add(tuple(sorted(solution)))
+                c_img.bad_solutions = bad_solutions
 
             elif solution != None and (prev_bad_modules == set(c_img.bad_cust_mods) or len(prev_bad_modules) <= len(c_img.bad_cust_mods)) and stored_module_solution:
                 print("This solution", solution," is not good for image", c_img.img, "Trying other solution")
-                bad_solutions.append(set(sorted(solution)))
+                bad_solutions.append(tuple(sorted(solution)))
                 c_img.bad_solutions = bad_solutions
 
 
@@ -2476,9 +2527,7 @@ def layout_correct(image, infile, serial_out, fi_opts):
                 solution = analyze_image_modules(c_img)
             except:
                 print(traceback.format_exc())
-                with open(cu.log_path + "/fucked_up.out", "a") as f:
-                    f.write(image +"\n")
-            
+
             ### Now we have have tried to recover the layout of struct module
             ### Proceed with the rest of crashing modules if any
             if tested_struct_module:
@@ -2502,6 +2551,7 @@ def layout_correct(image, infile, serial_out, fi_opts):
                     test_solution(c_img, solution_buffer + solution, True)
                 else:
                     test_solution(c_img, solution_buffer + solution)
+                times_tested += 1
             elif not solution and serial_output != [] and tested_struct_module and crashed_modules_firmadyne != [] and c_img.bad_cust_mods != []:
                 print("There is no Firmadyne solution for", c_img.img, "Aborting")
                 break
