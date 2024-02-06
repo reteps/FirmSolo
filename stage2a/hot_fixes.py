@@ -453,3 +453,21 @@ def hot_fixes(image_dir,kernel):
     except Exception as e:
         print("Error with fixing {0}".format(localfix))
         print(e)
+
+    # Fix for the NF_CT_MAX_EXPECT_CLASSES
+    try:
+        localfix = image_dir + "include/net/netfilter/nf_conntrack.h"
+        with open(localfix,"r") as f:
+            data = f.readlines()
+
+        for indx,line in enumerate(data):
+            if "#define NF_CT_MAX_EXPECT_CLASSES" in line:
+                data[indx] = "#define NF_CT_MAX_EXPECT_CLASSES        4\n"
+                break
+
+        with open(localfix,"w") as f:
+            f.writelines(data)
+
+    except Exception as e:
+        print("Error with fixing {0}".format(localfix))
+        print(e)
