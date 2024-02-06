@@ -363,6 +363,12 @@ def find_definition(data):
             filez = subprocess.check_output(cmd,cwd=k_dir,shell=True,timeout=60).decode("utf-8")
         except:
             print(traceback.format_exc())
+    if filez == "":
+        cmd = 'cscope -d -L0"{0}"'.format(sym)
+        try:
+            filez = subprocess.check_output(cmd,cwd=k_dir,shell=True,timeout=60).decode("utf-8")
+        except:
+            print(traceback.format_exc())
 
     #print(filez)
     #path = ""
@@ -393,6 +399,13 @@ def find_file_freqs(filez,syms_fl_dict,syms_fl_groups):
     if filez != "" and filez != None:
         export_files = []
         tokens = filez.split("\n")
+        # Now this a nasty case with cscope. For symbols like "open" it wont
+        # just find the definition but all asignments of callbacks with the
+        # same name. E.g., .open = <smth>. This a an ugly heuristic to avoid
+        # this, but it should be addressed.
+        if len(tokens) > 10:
+            return syms_fl_dict, syms_fl_groups
+
         del tokens[-1]
         for token in tokens:
             # For each of the results returned by cscope for an exported
@@ -408,8 +421,6 @@ def find_file_freqs(filez,syms_fl_dict,syms_fl_groups):
                 syms_fl_dict[path] = 1
         flag = False
         indx = -1
-        print(filez)
-        print(export_files,"\n")
         for fl in export_files:
             for index,group in enumerate(syms_fl_groups):
                 if fl in group:
