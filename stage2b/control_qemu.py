@@ -291,7 +291,7 @@ class Emulate():
     def load_one(self, cmd):
         try:
             self.child.sendline(cmd)
-            self.child.expect(['# ',pexpect.EOF], timeout=60)
+            self.child.expect(['# ',pexpect.EOF], timeout=90)
             result = self.child.before.decode("utf-8")
             #print(result)
         except:
@@ -431,7 +431,7 @@ class Emulate():
 
                 if segfault == "segfault" or segfault == "timeout":
                     self.segfaulted = True
-                    if sefault == "segfault":
+                    if segfault == "segfault":
                         crash_module = self.get_static_crash_mod_info()
                         if crash_module:
                             crash_module += ".ko"
