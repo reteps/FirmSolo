@@ -283,6 +283,8 @@ do_execve_common = """
 
 """
 
+do_execveat_common = do_execve_common 
+
 do_fork = """
         if (fdyne_syscall & LEVEL_EXEC && strcmp("khelper", current->comm)) {
                 printk(KERN_INFO "firmadyne: do_fork[PID: %d (%s)]: clone_flags:0x%lx, stack_size:0x%lx\\n", current->pid, current->comm, clone_flags, stack_size);
@@ -479,7 +481,8 @@ hooks_dict = {
         "sys_close2":[sys_close,fl_sys_close,"only_between linux-2.6.27.12 linux-2.6.28","SYSCALL_DEFINE1(close",[]],
         "sys_close3":[sys_close,fl_sys_close,"only_below linux-2.6.27.12","sys_close",["linux-2.6.28"]],
         "do_execve":[do_execve,fl_do_execve,"below linux-3.0.0"],
-        "do_execve_common":[do_execve_common,fl_do_execve,"above linux-3.0.0"],
+        "do_execve_common":[do_execve_common,fl_do_execve,"only_between linux-3.0.0 linux-3.19", "do_execve_common", []],
+        "do_execveat_common":[do_execveat_common,fl_do_execve,"above linux-3.19"],
         "do_fork":[do_fork,fl_do_fork,"all"],
         "do_fork_ret":[do_fork_ret,fl_do_fork_ret,"all"],
         "do_exit":[do_exit,fl_do_exit,"all"],
@@ -676,8 +679,6 @@ def apply_fdyne_hooks(kern_source,kernel):
     cwd = os.getcwd()
     os.chdir(kern_source)
     
-    #find_cscope_files()
-    #create_cscope_db()
     touched_files = []
 
     fix_main()
@@ -702,7 +703,6 @@ def apply_fdyne_hooks(kern_source,kernel):
         tokens = valid_kernels.split(" ")
         
        # if fl_to_modify in touched_files:
-        #print("File",fl_to_modify,"is touched...applying cscope")
         find_cscope_files(fl_to_modify)
         create_cscope_db()
 
@@ -712,19 +712,16 @@ def apply_fdyne_hooks(kern_source,kernel):
                 if kernel < tokens[1] and kernel not in data[4]:
                     continue
                 else:
-                   # print("here1")
                     what_to_search = data[3]
             if tokens[0] == "only_below":
                 if kernel >= tokens[1] and kernel not in data[4]:
                     continue
                 else:
-                  #  print("here2")
                     what_to_search = data[3]
             if tokens[0] == "only_between":
                 if kernel < tokens[1] or kernel >= tokens[2] and kernel not in data[4]:
                     continue
                 else:
-                 #   print("here3")
                     what_to_search = data[3]
             if tokens[0] == "below":
                 if kernel < tokens[1] or kernel in data[4]:
@@ -733,7 +730,6 @@ def apply_fdyne_hooks(kern_source,kernel):
                 if kernel >= tokens[1] or kernel in data[4]:
                     what_to_search = data[3]
             elif tokens[0] == "between":
-                #print("here2")
                 min_k = tokens[1]
                 max_k = tokens[2]
                 if kernel >= min_k and kernel < max_k or kernel in data[4]:
