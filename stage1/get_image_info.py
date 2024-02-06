@@ -65,6 +65,9 @@ class Image():
         self.cross = None
         self.isa = None
         self.symbols = []
+        self.distrib_module_order = []
+        self.mod_syms = {}
+        self.mod_parents = {}
     
     ### Extract the ksyms from the orginal kernel if that is possible
     def extract_kallsyms(self):
@@ -181,6 +184,10 @@ class Image():
             #if self.kernel == None:
                 #print("FS could not find a kernel for this image")
             #return True
+        ### Store the symbols for each distributed module, because we are going to use the
+        ### symbols to find the correct order in which we should load these modules
+        if module not in self.mod_syms:
+            self.mod_syms[module] = [set(), set()]
         ### Now get the symbols of the module
         ### We run nm for this purpose
         nm = None
@@ -200,13 +207,56 @@ class Image():
                     del tokens[0]
                 ### Find the global and the undefined symbols and save them
                 ### First Undefined
-                if tokens[0] == "U" and tokens[1] not in self.undef_syms:
-                    self.undef_syms.append(tokens[1])
+                if tokens[0] == "U":
+                    self.mod_syms[module][1].add(tokens[1]) 
+                    if tokens[1] not in self.undef_syms:
+                        self.undef_syms.append(tokens[1])
                 ### Next Global
-                elif tokens[0] != "U" and tokens[0].isupper() and tokens[1] not in self.global_syms:
-                    self.global_syms.append(tokens[1])
+                elif tokens[0] != "U" and tokens[0].isupper():
+                    self.mod_syms[module][0].add(tokens[1])
+                    if tokens[1] not in self.global_syms:
+                        self.global_syms.append(tokens[1])
         #return False
 
+    ### Find the order based on the symbols used from other modules/dependencies
+    ### Dont rely on the .modinfo section because it might be empty
+    def find_module_order(self, module):
+        self.mod_parents[module] = set()
+        undef_syms = self.mod_syms[module][1]
+        for mod in self.modules:
+            if module == mod:
+                continue
+            exported_syms = self.mod_syms[mod][0]
+            for sym in undef_syms:
+                # We found that a required sym for module is exported by another
+                # module, thus we have a dep
+                if sym in exported_syms:
+                    self.mod_parents[module].add(mod)
+                    break
+    
+    def fix_order_recursive(self, module, index):
+        if module in self.distrib_module_order:
+            return
+        self.distrib_module_order.insert(index, module)
+        
+        parents = self.mod_parents[module]
+        for mod in parents:
+            self.fix_order_recursive(mod, index)
+        
+    def fix_order(self, module):
+        if len(self.distrib_module_order) == 0:
+            self.distrib_module_order.append(module)
+            index = 0
+        elif module in self.distrib_module_order:
+            return
+        else:
+            index = len(self.distrib_module_order) - 1
+            self.distrib_module_order.append(module)
+        
+        parents = self.mod_parents[module]
+        for mod in parents:
+            self.fix_order_recursive(mod, index)
+    
     ### This is for the case where the vermagic is not available in the modules
     ### Thus we might come across some of the vermagic options inside the
     ### option and guard set we created using the module symbols
@@ -414,7 +464,8 @@ class Image():
                 "final_files":self.final_files,
                 "options":seen_options,
                 "guards": additional_guards,
-                "module_options" : module_options
+                "module_options" : module_options,
+                "module_nm_info" : self.mod_syms,
                 }
 
         cu.write_pickle(image_file,dict_to_save)
@@ -675,7 +726,6 @@ def get_image_info(image):
     kern.read_guard_dictionary()
     tar_exists = kern.find_and_cscope(img.arch)
     if not tar_exists or img.arch == None:
-        outf.write(image+"\n")
         print("Tar does not exist")
         return
     
@@ -690,9 +740,12 @@ def get_image_info(image):
     seen_options, additional_guards = kern.find_sym_and_guard_conds(img.final_files,img.symbols)
     seen_options = filter_options(seen_options)
     seen_options = img.populate_vermagic(seen_options, additional_guards)
-    mod_order = Module_Order(img.modules, "shipped", img.extracted_fs_dir)
-    mod_order.get_mod_order()
-    order = mod_order.order
+    img.modules.remove('')
+    for module in img.modules:
+        img.find_module_order(module)
+    for module in img.modules:
+        img.fix_order(module)
+    order = img.distrib_module_order
     module_options = kern.find_module_options(order)
     img.modules = order
 
