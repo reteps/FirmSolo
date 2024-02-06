@@ -22,6 +22,7 @@ conf_match = ["CONFIG_MODULE_UNLOAD","CONFIG_CPU_MIPS32_R1","CONFIG_32BIT","CONF
 vermagic_opts = {
                 "mod_unload" : "CONFIG_MODULE_UNLOAD",
                 "MIPS32_R1"  : "CONFIG_CPU_MIPS32_R1",
+                "RLX"        : "CONFIG_CPU_MIPS32_R1",
                 "MIPS32_R2"  : "CONFIG_CPU_MIPS32_R2",
                 "preempt"    : "CONFIG_PREEMPT",
                 "modversions": "CONFIG_MODVERSIONS",
@@ -256,22 +257,23 @@ class Image:
                 if "MIPS" in token:
                     release = token
                     ARCH="MIPS"
+                elif "RLX" in token:
+                    release = "RLX"
+                    ARCH="MIPS"
                 elif "ARM" in token:
                     ARCH="ARM"
                     release = token
-        
+
         print ("RELEASE",release)
         try:
             option = vermagic_opts[release]
         except:
             option = ""
-        #release_indx = ver_tokens.index(release)
-        #option = conf_match[release_indx]
-        
+
         options = option.split()
         for opt in options:
             self.set_option(opt,2)
-        
+
         if ARCH== "ARM" and release >= "ARMv5":
                 #self.set_option("CPU_V6K",2)
             if release > "ARMv5":
@@ -294,12 +296,6 @@ class Image:
                 if "p2v8" not in ver_magic:
                     self.set_option("CONFIG_REALVIEW_HIGH_PHYS_OFFSET",0)
 
-                #armv6_disable = conf_match[8].split()
-                #for opt in armv6_disable:
-                    #if opt != "CONFIG_ARCH_REALVIEW":
-                        #self.set_option(opt,0)
-
-
         for token in ver_magic:
             if token in vermagic_opts:
                 #indx = ver_tokens.index(token)
@@ -314,15 +310,14 @@ class Image:
                 option = ARCH + "_" + arch_spec_match[indx]
                 self.set_option(option,2)
                 print("ARCH_SPEC",option)
-        if ARCH == 'MIPS':
+        if ARCH != 'ARM':
             self.set_option("MIPS_MALTA",2)
         
-
-
         for token in ver_tokens:
             if token not in ver_magic:
                 if token == "preempt":
                     self.set_option("CONFIG_PREEMPT_NONE",2)
+                    self.set_option("CONFIG_PREEMPT",0)
                     continue
                 if token == "modversions":
                     self.set_option("CONFIG_MODVERSIONS",0)
@@ -330,9 +325,7 @@ class Image:
                 if token == "mod_unload":
                     self.set_option("CONFIG_MODULE_UNLOAD",0)
                     continue
-                #indx = ver_tokens.index(token)
-                #option = conf_match[indx]
-                #set_option(option,0)
+
         flag = False
         for token in arch_spec:
             if token in ver_magic:
@@ -343,9 +336,8 @@ class Image:
                 self.set_option("CONFIG_MIPS_MT_DISABLED",2)
                 self.set_option("CONFIG_SYS_SUPPORTS_MULTITHREADING",0)
             self.set_option("CONFIG_SMP",0)
-        
+
         if ARCH== "ARM" and release >= "ARMv5":
-                #self.set_option("CPU_V6K",2)
             if release > "ARMv5":
                 self.set_option("CONFIG_CPU_ARM926T",0)
                 self.set_option("CONFIG_CPU_32v5",0)
@@ -733,10 +725,6 @@ def def_and_set(kconf,image,kernel,ver_magicz,unknown,endianess,arch,modulez,res
     img_inst.set_option("CONFIG_MODULE_SRCVERSION_ALL",0)
     img_inst.set_option("CONFIG_LOCALVERSION_AUTO",0)
 
-    ### Somehow this option prevents the kernel from booting
-    ### the QEMU image in these kernels 
-    if kernel > "linux-3.10.0":
-        img_inst.set_option("CONFIG_GPIOLIB",0)
     img_inst.set_option("CONFIG_DEBUG_INFO",2)
     img_inst.set_option("CONFIG_MTD",2)
     img_inst.set_option("CONFIG_MTD_PARTITIONS",2)
@@ -777,22 +765,32 @@ def def_and_set(kconf,image,kernel,ver_magicz,unknown,endianess,arch,modulez,res
 # Copied the code from eval_string in kconfiglib
     for guard in guard_options:
         img_inst.filename = None
-        img_inst.kconf._tokens = img_inst.kconf._tokenize("if " + guard.replace("CONFIG_",""))
-        img_inst.kconf._line = guard.replace("CONFIG_","")
-        img_inst.kconf._tokens_i = 1
-        expression = img_inst.kconf._expect_expr_and_eol()
-        img_inst._split_expr_info(expression,expression)
-    
+        try:
+            img_inst.kconf._tokens = img_inst.kconf._tokenize("if " + guard.replace("CONFIG_",""))
+            img_inst.kconf._line = guard.replace("CONFIG_","")
+            img_inst.kconf._tokens_i = 1
+            expression = img_inst.kconf._expect_expr_and_eol()
+            img_inst._split_expr_info(expression,expression)
+        except:
+            pass
+
 # Enable the options for the Data Structure alignment 
     for opt in ds_options:
         img_inst.filename = None
-        img_inst.kconf._tokens = img_inst.kconf._tokenize("if " + opt.replace("CONFIG_",""))
-        img_inst.kconf._line = opt.replace("CONFIG_","")
-        img_inst.kconf._tokens_i = 1
-        expression = img_inst.kconf._expect_expr_and_eol()
-        img_inst._split_expr_info(expression,expression)
-    
-    
+        try:
+            img_inst.kconf._tokens = img_inst.kconf._tokenize("if " + opt.replace("CONFIG_",""))
+            img_inst.kconf._line = opt.replace("CONFIG_","")
+            img_inst.kconf._tokens_i = 1
+            expression = img_inst.kconf._expect_expr_and_eol()
+            img_inst._split_expr_info(expression,expression)
+        except:
+            pass
+
+    ### Somehow this option prevents the kernel from booting
+    ### the QEMU image in these kernels
+    if kernel > "linux-3.10.0":
+        img_inst.set_option("CONFIG_GPIOLIB",0)
+
     img_inst.set_option("CONFIG_VGA_CONSOLE",0)
     img_inst.set_option("CONFIG_VIDEO_IVTV",0)
     
@@ -835,7 +833,7 @@ def def_and_set(kconf,image,kernel,ver_magicz,unknown,endianess,arch,modulez,res
             img_inst.set_option("CPU_LITTLE_ENDIAN",2)
         else:
             img_inst.set_option("CPU_BIG_ENDIAN",2)
-    
+
     print ("OPTIONS\n",seen_opt)
 
     print("GUARDS\n",guard_options)
