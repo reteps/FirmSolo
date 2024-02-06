@@ -50,6 +50,8 @@ RUN apt-get update && apt-get install -y \
 	postgresql \
 	wget \
 	cscope \
+	gcc-5-mips-linux-gnu \
+	gcc-5-mipsel-linux-gnu \
 	qemu \
 	qemu-system-arm \
 	qemu-system-mips \
@@ -91,7 +93,12 @@ RUN service postgresql start && \
 # Install FirmSolo
 RUN git clone --recursive https://github.com/BUseclab/FirmSolo.git /FirmSolo && \
 	cd /FirmSolo && \
-	wget --quiet -N --continue --no-check-certificate 'https://docs.google.com/uc?export=download&id=11GiU8N1U4Nkhv-kurkoGgwmp38CM_Umg' -O buildroot_fs.tar.gz && \
-	tar xvf buildroot_fs.tar.gz
+	git clone https://github.com/BUseclab/FirmSolo-data.git && \
+	mv ./FirmSolo-data/buildroot_fs.tar.gz . && rm -rf ./FirmSolo-data && \
+	tar xvf buildroot_fs.tar.gz && rm buildroot_fs.tar.gz
+
+# Set the symlinks for mips gcc-5
+RUN ln -s /bin/mips-linux-gnu-gcc-5 /bin/mips-linux-gnu-gcc && \
+	ln -s /bin/mipsel-linux-gnu-gcc-5 /bin/mipsel-linux-gnu-gcc
 
 ENTRYPOINT ["/bin/bash", "-l", "-c"]
