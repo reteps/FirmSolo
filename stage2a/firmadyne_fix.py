@@ -585,6 +585,25 @@ EXPORT_SYMBOL(firmsolo);
 
 """
 
+firmae_template = """
+		if (!strncmp(param, "FIRMAE_KERNEL=", val - param) &&
+				!strncmp(val, "true", 4))
+		{
+			printk("found FIRMAE_KERNEL=t\n");
+			for (i = 0; envp_init[i]; i++)
+			{
+				if (i == MAX_INIT_ENVS)
+				{
+					panic_later = "env";
+					panic_param = param;
+				}
+				if (!strncmp(envp_init[i], "LD_PRELOAD=", 11))
+					break;
+			}
+			printk("set the LD_PRELOAD=/firmadyne/libnvram_ioctl.so\n");
+			envp_init[i] = "LD_PRELOAD=/firmadyne/libnvram_ioctl.so";
+		}
+"""
 
 def find_cscope_files(kfile):
 
@@ -713,6 +732,15 @@ def fix_main():
             for ln in template:
                 lines.insert(index,ln)
                 index += 1
+
+    firmae_template_fixed = fix_template(firmae_template)
+    for i, line in enumerate(lines[index:]):
+        if "envp_init[i] = param;" in line:
+            for ln in firmae_template_fixed:
+                lines.insert(i, ln)
+                i+=1
+            break    
+
     with open("init/main.c", "w") as f:
         f.writelines(lines)
 
