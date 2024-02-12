@@ -37,7 +37,13 @@ static long acos_ioctl(struct file *file, unsigned int cmd, unsigned long arg_pt
 
 	switch (cmd) {
 		case 0x40046431:
+		case 0x80046431:
 			printk(KERN_WARNING MODULE_NAME": ACOS: agApi_GetFirstTriggerConf\n");
+			retval = 1;
+			break;
+		case 0x40046432:
+		case 0x80046432:
+			printk(KERN_WARNING MODULE_NAME": ACOS: agApi_fwGetNextTriggerConf\n");
 			retval = 1;
 			break;
 		default:

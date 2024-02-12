@@ -27,6 +27,8 @@
 #define LEVEL_FS_R    (1 << 3)
 /* Process execution operations; e.g. mmap, fork, etc */
 #define LEVEL_EXEC    (1 << 4)
+/* Process execution checker; e.g. popen, system, execve, etc */
+#define LEVEL_ANALYZE (1 << 5)
 
 #define SYSCALL_HOOKS \
 	/* Hook network binds */ \
