@@ -132,6 +132,8 @@ class FirmSolo():
         else:
             info['fdyne_dslc'] = opts
 
+        cu.write_pickle(f"{cu.img_info_path}/{self.image}.pkl", info)
+
 def main():
     parser = argparse.ArgumentParser(description='Extract metadata information from firmware images')
     parser.add_argument('-i','--image',help ='A single image to get the information from',default = None)
