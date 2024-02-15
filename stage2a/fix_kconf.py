@@ -72,16 +72,6 @@ def fix_configs(kern_dir,kernel):
   except:
     print("Valid4")
 
-
-  try:
-      os.system("rm sound/soc/ux500/Kconfig")
-      os.system("cp  {}scripts/compile_scripts/Kconfig sound/soc/ux500/".format(cu.abs_path))
-
-  except:
-    print("Valid5")
-
-
-
   try:
     with open("drivers/media/usb/stk1160/Kconfig","r") as f1:
       print("Opened")
