@@ -373,6 +373,22 @@ def fix_configs(kern_dir,kernel):
   except:
     print("Valid22")
 
+  try:
+    with open("sound/soc/ux500/Kconfig","r") as f1:
+      data = f1.readlines()
+  except:
+    print("File sound/soc/ux500/Kconfig not found")
+    
+  try:
+    for i,line in enumerate(data):
+        if "+" in line:
+            data[i] = line.strip("+")
+
+    with open("sound/soc/ux500/Kconfig","w") as f1:
+      f1.writelines(data)
+  except:
+    print("Valid23")
+  
   os.chdir(cwd)
 if __name__ == "__main__":
   fix_configs("./")

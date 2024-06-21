@@ -180,22 +180,41 @@ class TriforceAFL:
         else:
             return False
 
+        iface = self.qemu_opts["iface"]
+        if iface != "":
+            if self.qemu_opts['id'] != "" and self.qemu_opts['id'] != None:
+                drive = "{},{}{}".format(self.fs_path, self.qemu_opts['iface'], self.qemu_opts['id'])
+            else:
+                drive = "{},{}".format(self.fs_path, iface)
+        else:
+            drive = "{},{}".format(self.fs_path, iface)
+
+        min_drive = drive
+        try:
+            if self.qemu_opts['device'] != "" and self.qemu_opts['device'] != None:
+                min_drive = f"{drive} {self.qemu_opts['device']}"
+                drive = f"\"{drive} {self.qemu_opts['device']}\""
+        except:
+            pass
+           
+        tty = self.qemu_opts["tty"]
+
         machine = self.qemu_opts["machine"]
         if self.qemu_opts["cpu"] != "":
-            cpu = self.qemu_opts["cpu"].split()[1]
+            cpu = self.qemu_opts["cpu"]
         else:
             cpu = ""
         
-        print("CPU", cpu)
-        iface = self.qemu_opts["iface"]
-        if iface == "":
-            iface = "if=ide"
+        #print("CPU", cpu)
+        #iface = self.qemu_opts["iface"]
+        #if iface == "":
+            #iface = "if=ide"
 
         blk_dev = self.qemu_opts["blk_dev"]
-        tty = self.qemu_opts["tty"]
+        #tty = self.qemu_opts["tty"]
 
         fuzzer_args = \
-                f"-t 200 -m 6144 -i {self.input_dir} -o {self.input_dir_min} -QQ -- {qemu} -L /TriforceAFL/qemu_mode/qemu/pc-bios -kernel {self.kernel_path} -drive file=privmem:{self.fs_path},{iface} -m 256M -nographic -append \"root={blk_dev} rw init=/init console={tty} fdyne_execute=0 firmadyne.procfs=0 firmadyne.devfs=0 mem=256M\" -M {machine} -cpu {cpu} -aflPanicAddr {self.panic} -aflDmesgAddr {self.die} -aflFile2 {self.copy_data_file} -aflFile @@"
+                f"-t 200 -m 6144 -i {self.input_dir} -o {self.input_dir_min} -QQ -- {qemu} -L /TriforceAFL/qemu_mode/qemu/pc-bios -kernel {self.kernel_path} -drive file=privmem:{min_drive} -m 256M -nographic -append \"root={blk_dev} rw init=/init2 console={tty} fdyne_execute=0 firmadyne.procfs=0 firmadyne.devfs=0 mem=256M\" -M {machine} {cpu} -aflPanicAddr {self.panic} -aflDmesgAddr {self.die} -aflFile2 {self.copy_data_file} -aflFile @@"
 
         self.minimizer = f"timeout --foreground -k 10 300 /TriforceAFL/afl-cmin {fuzzer_args}"
         print("Minimizing cmd", self.minimizer)
@@ -208,11 +227,11 @@ class TriforceAFL:
             self.input_dir_min = self.input_dir
 
         if cpu != "":
-            temp = cpu
-            cpu = "\"" + "-cpu " + temp + "\""
+            #temp = cpu
+            cpu = "\"" + cpu + "\""
             
         self.fuzz_cmd = \
-                f"timeout -k 10 {self.timeout} /TriforceLinuxSyscallFuzzer/Fuzz -M {self.banner} {self.kernel_path} {self.image} {self.target_dir} {self.fs_path},{iface} {machine} {self.panic} {self.copy_data_file} {qemu} {self.die} {blk_dev} {self.input_dir_min} {tty} {cpu}"
+                f"timeout -k 10 {self.timeout} /TriforceLinuxSyscallFuzzer/Fuzz -M {self.banner} {self.kernel_path} {self.image} {self.target_dir} {drive} {machine} {self.panic} {self.copy_data_file} {qemu} {self.die} {blk_dev} {self.input_dir_min} {tty} {cpu}"
         
         print("Fuzzer cmd is", self.fuzz_cmd)
         return True
@@ -231,8 +250,8 @@ class TriforceAFL:
         rootfs = "rootfs_{}_{}.qcow2".format(self.module, self.dev_name)
         self.fs_path = "{}/{}/fuzzer/{}".format(cu.fs_dir, self.image, rootfs)
 
-        if os.path.exists(self.fs_path):
-            return
+        #if os.path.exists(self.fs_path):
+            #return
 
         insmod = []
         for path in self.deps:
@@ -564,7 +583,11 @@ if __name__ == "__main__":
     print(f"Will fuzz for {timeout} seconds")
    # Create a pool of python workers
     #p = Pool(cu.num_of_threads)
-
+    
+    tokens = image.split(",")
+    image = tokens[0]
+    kmod = tokens[1]
+    device = tokens[2]
     entries = get_entries(image)
 
     all_data = []
@@ -573,19 +596,23 @@ if __name__ == "__main__":
     for entry in entries:
         
         module = entry[1]
+        if module != kmod:
+            continue
         image = entry[0]
 
         devices = entry[2:]
         devs = []
         for dev in devices:
             tokens = dev.split(":")
+            if tokens[0] != device:
+                continue
             if tokens[0].isnumeric():
                 continue
             else:
                 devs.append(dev)
 
         print("Getting the IOCTL cmd numbers for image",image,"and module",module)
-        get_cmd_nums(image, module + ".ko")
+        #get_cmd_nums(image, module + ".ko")
         
         # Create the result directory
         out_fuzz_dir = create_directories(image)
@@ -600,5 +627,5 @@ if __name__ == "__main__":
     
     for data in all_data:
         start_fuzz(data)
-        #print("Data", data)
+        print("Data", data)
     #res = p.map(start_fuzz, all_data)

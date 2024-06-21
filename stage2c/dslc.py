@@ -444,6 +444,7 @@ class Image():
                 continue
 
             tokens = line.split()
+            print(tokens)
             error_addr = tokens[0].strip("[<>]")
             ### Call trace is of type "Function entered at..."
             if error_addr == "Function":
@@ -488,13 +489,19 @@ class Image():
             ### This means that KALLSYMS is disabled so we only have an address
             ### Search for the function
             if function == None:
-                function, error_loc = self.get_function_with_error(address,
+                try:
+                    function, error_loc = self.get_function_with_error(address,
                                     section_info)
+                except:
+                    continue
             ### We know the name, however we also need the module that has that
             ### function
             else:
-                temp,error_loc = self.get_function_with_error(address,
+                try:
+                    temp,error_loc = self.get_function_with_error(address,
                                                             section_info)
+                except:
+                    continue
             try:
                 if function == ".init":
                     function = "init_module"
@@ -674,7 +681,7 @@ class Image():
         cwd = os.getcwd()
         os.chdir(self.kern_dir)
         #module_configs = find_custom_module_options(self.cust_modules)
-        img_obj = Img(kconf,self.img, self.module_options, arch)
+        img_obj = Img(kconf,self.img, self.module_options, arch, self.kernel)
         
         if arch == "mips" and "CONFIG_SMP" in options:
             opts = ["CONFIG_MIPS_MT_SMP","!CONFIG_MIPS_MT_DISABLED", "CONFIG_SYS_SUPPORTS_MULTITHREADING"] + options 
@@ -742,7 +749,7 @@ class Image():
         print("Compilation Command",compile_cmd)
 
         try:
-            res = subprocess.run(compile_cmd,stdout=subprocess.PIPE, stderr=subprocess.PIPE,shell=True, timeout = 600)
+            res = subprocess.run(compile_cmd,stdout=subprocess.PIPE, stderr=subprocess.PIPE,shell=True, timeout = 1200)
         except:
             print(traceback.format_exc())
             pass
@@ -906,11 +913,14 @@ class Image():
         ### Now get a random upstream module to experiment upon
         ### Any will do because struct module is common to all
         ### modules
+        random_module = None
         for random_mod in self.ups_mod_order:
             if "net" in random_mod:
                 continue
             random_module = random_mod
             break
+        if not random_module:
+            random_module = self.ups_mod_order[0]
 
         ghidra_cmd = f"{cu.ghidra_dir}support/analyzeHeadless {cu.script_dir}ghidra Project{self.img}" \
             f" -import \"{self.extracted_fs_dir}{crashing_mod_path}\" -postScript get_struct_mod_layout.py -readOnly" \
@@ -2171,7 +2181,7 @@ def analyze_image_modules(c_img):
             c_img.struct_mod_ok = True
             return None
 
-        cu.clean_kernel_source(c_img.kernel, "ubuntu", c_img.arch)
+        #cu.clean_kernel_source(c_img.kernel, "ubuntu", c_img.arch)
         ### First check if the "struct module" layout is ok
         ### Then proceed with fixing any other struct that
         ### has an issue
@@ -2493,10 +2503,16 @@ def layout_correct(image, infile, serial_out, fi_opts):
             # an infinite loop
             if times_tested > 2:
                 print("No additional solution can be found for image's", c_img.img, "modules")
+                if serial_output != []:
+                    with open(f"{cu.log_path}/pandawan_dslc.out", "a") as f:
+                        f.write(f"No solution for {crashed_modules_firmadyne}, when tested more than 3 times\n")
                 break
 
             if not solution and prev_bad_modules == set(c_img.bad_cust_mods) and tested_struct_module:
                 print("No additional solution can be found for image's", c_img.img, "modules")
+                if serial_output != []:
+                    with open(f"{cu.log_path}/pandawan_dslc.out", "a") as f:
+                        f.write(f"No solution for {crashed_modules_firmadyne}\n")
                 break
             ### We fixed some modules but not all, thus save the intermediate
             ### solution and go on with the rest of the modules
@@ -2513,7 +2529,7 @@ def layout_correct(image, infile, serial_out, fi_opts):
 
             elif solution != None and (prev_bad_modules == set(c_img.bad_cust_mods) or len(prev_bad_modules) <= len(c_img.bad_cust_mods)) and stored_module_solution:
                 print("This solution", solution," is not good for image", c_img.img, "Trying other solution")
-                bad_solutions.append(tuple(sorted(solution)))
+                bad_solutions.add(tuple(sorted(solution)))
                 c_img.bad_solutions = bad_solutions
 
 
@@ -2546,6 +2562,8 @@ def layout_correct(image, infile, serial_out, fi_opts):
             if solution:
                 if serial_output != []:
                     print("Found a potential Firmadyne solution for", c_img.img, "Please compile manually the kernel for the solution\n", solution)
+                    with open(f"{cu.log_path}/pandawan_dslc.out", "a") as f:
+                        f.write(f"{solution}\n")
                     break
                 if c_img.struct_mod_ok and not stored_module_solution:
                     test_solution(c_img, solution_buffer + solution, True)
@@ -2554,6 +2572,8 @@ def layout_correct(image, infile, serial_out, fi_opts):
                 times_tested += 1
             elif not solution and serial_output != [] and tested_struct_module and crashed_modules_firmadyne != [] and c_img.bad_cust_mods != []:
                 print("There is no Firmadyne solution for", c_img.img, "Aborting")
+                with open(f"{cu.log_path}/pandawan_dslc.out", "a") as f:
+                    f.write(f"No solution for {crashed_modules_firmadyne}\n")
                 break
 
             time.sleep(1)
@@ -2583,6 +2603,7 @@ def main():
     serial_out = res.serial_out
     fi_opts = res.fi_opts
     
+    print("FI OPTS are", fi_opts)
     
     layout_correct(image, infile, serial_out, fi_opts)
 

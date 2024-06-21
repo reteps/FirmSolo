@@ -28,16 +28,31 @@ def find_char_devs(image):
     print("Loaded modules\n", loaded_modules)
     ### First filter out the noise
     dmesg = []
-    for line in lines:
+    indx = 0
+    while indx < len(lines):
+        line = lines[indx]
         if "insmod " in line:
+            tmp = line
+            while ".ko" not in tmp:
+                indx+=1
+                if indx >= len(lines):
+                    break
+                tmp = lines[indx]
+            
+            if line != tmp:
+                line += tmp
             dmesg.append(line)
+            print(line)
+            indx += 1
+            continue
         #if "insmod:" in line:
             #dmesg = dmesg[]
         #if "Module_name:" in line:
             #dmesg.append(line)
         elif "Registering device" in line:
             dmesg.append(line)
-    
+        indx += 1
+        
     devices = []
     indx = 0
     while indx < len(dmesg):

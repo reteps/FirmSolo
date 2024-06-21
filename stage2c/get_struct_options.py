@@ -11,7 +11,6 @@ sys.path.append(parentdir)
 from stage2a.kcre import Image as Img                           ### We also have an image class here
 from stage2a.kconfiglib import Kconfig
 from stage2b.get_order import get_dictionary
-from pygdbmi.gdbcontroller import GdbController
 from pprint import pprint
 import pexpect as pe
 import pickle

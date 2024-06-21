@@ -213,7 +213,7 @@ def create_img_fs(image,cnt,fs_type,*args):
     dev_name = ""
     if args:
         init_template = args[0]
-        fl = "/tmp/{}_{}/init".format(image,cnt)
+        fl = "/tmp/{}_{}/init2".format(image,cnt)
         create_unique_fs = True
         with open(fl,"w") as f:
             f.write(init_template)

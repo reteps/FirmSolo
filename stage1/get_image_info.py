@@ -90,8 +90,9 @@ class Image():
             subdir = f"v{vers}.x"
 
         path = Path(kernel_dir)
-
-        if not (path.exists()):
+        tar_path = Path(f"{cu.tar_dir}/{kernel}.tar.gz")
+        
+        if not path.exists() and not tar_path.exists():
             remote_tar_file = "{}{}/{}.tar.gz".format(kernel_org, subdir,
                                                       kernel)
             local_tar_file = "{}/{}.tar.gz".format(cu.tar_dir, kernel)
@@ -133,6 +134,7 @@ class Image():
         modinfo = None
         output = None
 
+        print(module, self.vermagic, self.kernel)
         if self.vermagic and self.kernel:
             return
 
@@ -172,11 +174,12 @@ class Image():
                 self.vermagic = ["MIPS" + self.isa]
         if not self.kernel:
             self.get_kernel_info(module)
+        print(module, self.vermagic, self.kernel)
 
     ### Function to get the undefined and global symbols for a module
     ### We invoke string instead of modinfo, since it is more effective
     def get_module_symbols(self,module):
-
+        
         self.get_vermagic_info(module)
         ### If the kernel does not exist in our available kernels we
         ### cannot compile it anyway so abort checking the image
@@ -212,11 +215,27 @@ class Image():
                     if tokens[1] not in self.undef_syms:
                         self.undef_syms.append(tokens[1])
                 ### Next Global
-                elif tokens[0] != "U" and tokens[0].isupper():
+                elif tokens[0] != "U":
                     self.mod_syms[module][0].add(tokens[1])
                     if tokens[1] not in self.global_syms:
                         self.global_syms.append(tokens[1])
         #return False
+    
+    def find_if_mod_in_parent(self, module, mod):
+        if mod not in self.mod_parents:
+            return False
+
+        parents = self.mod_parents[mod]
+        if module in parents:
+            return True
+        else:
+            for parent in parents:
+                is_parent = self.find_if_mod_in_parent(module, parent)
+                if parent:
+                    return True
+                else: continue
+
+            return False
 
     ### Find the order based on the symbols used from other modules/dependencies
     ### Dont rely on the .modinfo section because it might be empty
@@ -226,6 +245,9 @@ class Image():
         for mod in self.modules:
             if module == mod:
                 continue
+            is_in_parents = self.find_if_mod_in_parent(module, mod)
+            if is_in_parents:
+                continue
             exported_syms = self.mod_syms[mod][0]
             for sym in undef_syms:
                 # We found that a required sym for module is exported by another
@@ -234,35 +256,46 @@ class Image():
                     self.mod_parents[module].add(mod)
                     break
     
-    def fix_order_recursive(self, module, index):
+    def fix_order_recursive(self, module):
+        print("Checking module", module)
         if module in self.distrib_module_order:
             return
-        self.distrib_module_order.insert(index, module)
+        #self.distrib_module_order.insert(index, module)
         
         parents = self.mod_parents[module]
         for mod in parents:
-            self.fix_order_recursive(mod, index)
+            print("Checking parent of module", module, mod)
+            self.fix_order_recursive(mod)
+        
+        print("Adding module", module)
+        self.distrib_module_order.append(module)
         
     def fix_order(self, module):
-        if len(self.distrib_module_order) == 0:
-            self.distrib_module_order.append(module)
-            index = 0
-        elif module in self.distrib_module_order:
+        print("Checking module", module)
+        if module in self.distrib_module_order:
             return
-        else:
-            index = len(self.distrib_module_order) - 1
-            self.distrib_module_order.append(module)
+        #if len(self.distrib_module_order) == 0:
+            #self.distrib_module_order.append(module)
+            #index = 0
+        #elif module in self.distrib_module_order:
+            #return
+        #else:
+            #index = len(self.distrib_module_order) - 1
+            #self.distrib_module_order.append(module)
         
         parents = self.mod_parents[module]
         for mod in parents:
-            self.fix_order_recursive(mod, index)
+            print("Checking parent of module", module, mod)
+            self.fix_order_recursive(mod)
+
+        print("Adding module", module)
+        self.distrib_module_order.append(module)
     
     ### This is for the case where the vermagic is not available in the modules
     ### Thus we might come across some of the vermagic options inside the
     ### option and guard set we created using the module symbols
     def populate_vermagic(self, options, guards):
         
-        print("Image", self.img)
         if len(self.vermagic) > 1:
             return options
 
@@ -281,6 +314,8 @@ class Image():
     def filter_mod_syms(self):
 
         for sym in self.undef_syms:
+            if sym == "__aeabi_unwind_cpp_pr0":
+                self.unknown_syms.append(sym)
             if sym not in self.global_syms:
                 self.unknown_syms.append(sym)
         print("Unknown symbols:",len(self.unknown_syms))
@@ -306,11 +341,12 @@ class Image():
         ### First get the modules
         result = None
         error = None
+        print(self.extracted_fs_dir)
         try:
             result = subprocess.check_output("find . -name \"*.ko\"",shell=True).decode("utf-8")
         except:
             print("Finding the modules of {} failed".format(self.img))
-
+        
         result = result.replace(" ","\\ ")
         if result:
             self.modules = result.split("\n")
@@ -348,10 +384,16 @@ class Image():
             #print("readelf",module)
             try:
                 output = subprocess.check_output("readelf -Ah ./{}".format(module),
-                                                 shell=True).decode("utf-8").split("\n")
-            except:
+                                                 shell=True, stderr=subprocess.STDOUT).decode("utf-8").split("\n")
+                if len(output) < 3: continue
+            except Exception as e:
                 print("Running readelf for {}s module: {} was unsuccessful".format(self.img,module))
+                output = e.output.decode("utf-8").split("\n")
+                if len(output) < 3: continue
+                if not output:
+                    continue
             
+            print("output:",output)
             if output:
                 for line in output:
                     if "Machine" in line or "Data" in line:
@@ -384,6 +426,7 @@ class Image():
                 break
         
         self.arch, self.endian, self.cross, self.isa = arch, endianess, cross, isa
+        print("ARCH is", self.arch, "Endian is", self.endian, "CROSS", self.cross, "ISA", self.isa)
         os.chdir(cwd)
     ### Get the kallsyms symbols from the original kernel
     ### if they exist...
@@ -519,6 +562,7 @@ class Kernel():
         if not (path.exists()):
             try:
                 untar = tarfile.open(kernel_tar_path)
+                untar.errorlevel = 0
             except:
                 print(traceback.format_exc())
                 print("Could not untar kernel", self.kernel)
@@ -745,7 +789,9 @@ def get_image_info(image):
         img.find_module_order(module)
     for module in img.modules:
         img.fix_order(module)
+    print("HEre4")
     order = img.distrib_module_order
+    print("HEre5")
     module_options = kern.find_module_options(order)
     img.modules = order
 
@@ -754,6 +800,7 @@ def get_image_info(image):
     print("Seen_options\n",seen_options)
     print("\nAdditional guards\n",additional_guards)
     print("Module_options\n", module_options)
+    print("Module order\n", order)
 
     img.save_image_info(seen_options,additional_guards, module_options)
 

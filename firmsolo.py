@@ -74,16 +74,17 @@ class FirmSolo():
         print(f"Untaring the filesystem for iamge {self.image}")
         try:
             untar = tarfile.open(self.image_tar)
+            untar.errorlevel = 0
         except:
             print("Could not open the filesystem tar for image {self.image}")
-            raise
+            pass
 
         try:
             untar.extractall(self.extracted_fs_dir)
             untar.close()
         except:
             print("Could not untar the filesystem for image {self.image}")
-            raise
+            pass
 
     def get_image_data(self):
         get_image_data(self.image)
@@ -91,7 +92,7 @@ class FirmSolo():
     def run_stage1(self):
         success = get_image_info(self.image)
     
-    def run_stage2a(self, ds_opt_fl, ds_opt_list, openwrt, firmadyne):
+    def run_stage2a(self, ds_opt_fl, ds_opt_list, openwrt, firmadyne, pandawan):
         ### These are for DSLC
         ds_recovery = 0
         single_module_dir = ""
@@ -100,7 +101,7 @@ class FirmSolo():
 
         ### Actually compile the kernel
         firm_kern_comp.run_the_compilation(self.image, ds_opt_fl, ds_opt_list, ds_recovery, \
-                single_module_dir, save_config, override_vermagic, openwrt, firmadyne)
+                single_module_dir, save_config, override_vermagic, openwrt, firmadyne, pandawan)
 
     
     def run_stage2b(self):
@@ -113,12 +114,15 @@ class FirmSolo():
         ### Run the emulation
         load_mods.load_mods(infile, outfile, 1, self.image, workdir, mode)
 
-    def run_stage2c(self, serial_out, firmadyne):
+    def run_stage2c(self, serial_out, firmadyne, pandawan):
         infile = ""
         if firmadyne:
             fi_opt = "-e"
         else:
             fi_opt = ""
+        if pandawan:
+            fi_opt += " -p"
+
         dslc.layout_correct(self.image, infile, serial_out, fi_opt)
     
     def save_firmadyne_dslc(self, opts):
@@ -144,6 +148,7 @@ def main():
     parser.add_argument('-m','--s_mod_dir',help='The kernel directory containing the Makefile for the target module...It must be used with ds_recovery', default="")
     parser.add_argument('-w','--openwrt',help='Specify this option to enable the MIPS OpenWRT patch', action = 'store_true')
     parser.add_argument('-e','--firmadyne',help='Include the DSLC fixes for the Firmadyne experiments', action = 'store_true')
+    parser.add_argument('-p','--pandawan',help='Add the Pandawan instrumentation', action = 'store_true')
     parser.add_argument( '--serial_out', type = str, help ='Serial output of an emulation run that contains the Call TRace for a crashing module. Used by DSLC for crashes within firmadyne', default = '')
     parser.add_argument('-d', '--image_data', help ='Get data about the image (e.g., kernel modules, loaded modules, module substitutions, etc)', action = 'store_true')
     parser.add_argument('-c', '--firmadyne_dslc', help ='Save the configuration options found by running DSLC for firmadyne. It should be used with -l or -f', action = 'store_true')
@@ -160,6 +165,7 @@ def main():
     serial_out = args.serial_out
     image_data = args.image_data
     firmadyne_dslc = args.firmadyne_dslc
+    pandawan = args.pandawan
 
     if not image:
         print("You must provide an image ID")
@@ -180,19 +186,19 @@ def main():
 
     if all_stages:
         firmsolo.run_stage1()
-        firmsolo.run_stage2a(ds_opt_fl, ds_opt_list, openwrt, firmadyne)
+        firmsolo.run_stage2a(ds_opt_fl, ds_opt_list, openwrt, firmadyne, pandawan)
         firmsolo.run_stage2b()
-        firmsolo.run_stage2c(serial_out, firmadyne)
+        firmsolo.run_stage2c(serial_out, firmadyne, pandawan)
 
     else:
         if stage == '1':
             firmsolo.run_stage1()
         elif stage == '2a':
-            firmsolo.run_stage2a(ds_opt_fl, ds_opt_list, openwrt, firmadyne)
+            firmsolo.run_stage2a(ds_opt_fl, ds_opt_list, openwrt, firmadyne, pandawan)
         elif stage == '2b':
             firmsolo.run_stage2b()
         elif stage == '2c':
-            firmsolo.run_stage2c(serial_out, firmadyne)
+            firmsolo.run_stage2c(serial_out, firmadyne, pandawan)
         else:
             print("Please provide a correct stage to run [1, 2a, 2b, 2c]")
 

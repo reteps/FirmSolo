@@ -167,12 +167,15 @@ class Parse:
                     condition = ""
                         
                 block = AST(tokens[0],condition)
-                #print("Creating new block",block.directive,block.cond,"Level",level)
+                print("Creating new block",block.directive,block.cond,"Level",level)
                 block.export = []
                 level += 1
                 # Start parsing until the end of the block
                 # We assume that the blocks are ended correctly
-                indx += 1 
+                indx += 1
+                if indx >=len(self.p.conditionalz):
+                    break
+
                 line,line_num = self.get_line(indx)
                 tokens = line.split()
                 #while tokens[0] not in start_cond and tokens[0] not in interm_cond:

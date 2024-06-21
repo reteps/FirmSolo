@@ -404,6 +404,25 @@ def hot_fixes(image_dir,kernel):
         print(e)
     
     try:
+        kernel = image_dir.split("/")[-2].split("-")[1]
+        localfix = image_dir + "kernel/module.c"
+        with open(localfix,"r") as f:
+            data = f.readlines()
+        
+        flag = False
+        for indx,line in enumerate(data):
+            if "static int check_modinfo(" in line:
+                data.insert(indx+2,"\treturn 0;\n")
+                break
+
+        with open(localfix,"w") as f:
+            f.writelines(data)
+
+    except Exception as e:
+        print("Error with fixing {0}".format(localfix))
+        print(e)
+    
+    try:
         localfix = image_dir + "scripts/dtc/dtc-lexer.l"
         with open(localfix,"r") as f:
             data = f.readlines()
@@ -464,6 +483,23 @@ def hot_fixes(image_dir,kernel):
             if "#define NF_CT_MAX_EXPECT_CLASSES" in line:
                 data[indx] = "#define NF_CT_MAX_EXPECT_CLASSES        4\n"
                 break
+
+        with open(localfix,"w") as f:
+            f.writelines(data)
+
+    except Exception as e:
+        print("Error with fixing {0}".format(localfix))
+        print(e)
+    
+    # Fix for the NF_CT_MAX_EXPECT_CLASSES
+    try:
+        localfix = image_dir + "kernel/irq/manage.c"
+        with open(localfix,"r") as f:
+            data = f.readlines()
+
+        for indx,line in enumerate(data):
+            if "old_temp = desc->action;" in line:
+                data[indx] = "old_temp = (struct sigaction*)desc->action;\n"
 
         with open(localfix,"w") as f:
             f.writelines(data)

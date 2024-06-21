@@ -187,7 +187,10 @@ def get_toolchain(kernel, arch, endian):
             else:
                 cross = "mipsel-linux-gnu-"
     elif arch == "arm":
-        cross = "/opt/arm_gcc-4.3/usr/bin/arm-linux-gnueabi-"
+        if kernel > "linux-4.5":
+            cross = "arm-linux-gnueabi-"
+        else:
+            cross = "/opt/arm_gcc-4.3/usr/bin/arm-linux-gnueabi-"
     else:
         cross = None
 

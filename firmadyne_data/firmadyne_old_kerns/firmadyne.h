@@ -6,6 +6,7 @@ extern unsigned int fdyne_execute;
 extern unsigned int fdyne_reboot;
 extern short procfs;
 extern unsigned int fdyne_syscall;
+extern unsigned int enable_device;
 
 #define MODULE_NAME "firmadyne"
 

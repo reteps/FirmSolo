@@ -60,11 +60,12 @@ core_nf_modules = ["x_tables.ko","nf_conntrack.ko","ip_tables.ko","iptable_filte
 core_nf_options = ["CONFIG_NETFILTER_XTABLES","CONFIG_NF_CONNTRACK","CONFIG_IP_NF_IPTABLES","CONFIG_IP_NF_FILTER","CONFIG_NF_NAT"]
 
 class Image:
-    def __init__(self,kconf,image, module_configs, arch):
+    def __init__(self,kconf,image, module_configs, arch, kernel):
         self.kconf = kconf
         self.image= image
         self.module_configs = module_configs
         self.arch = arch
+        self.kernel = kernel
 
 ################# Expression Parsing Functions #########################
     def split_expr(self,expr, op):
@@ -288,6 +289,11 @@ class Image:
                     self.set_option("CONFIG_ARM_PATCH_PHYS_VIRT",0)
 
             if release == "ARMv7":
+                if self.kernel >="linux-4.0":
+                    self.set_option("CONFIG_ARCH_MULTIPLATFORM",2)
+                    self.set_option("CONFIG_ARCH_VIRT",2)
+                    self.set_option("CONFIG_ARCH_MULTI_V7",2)
+                self.set_option("CONFIG_ARCH_MULTI_V6",0)
                 self.set_option("CONFIG_MACH_REALVIEW_PB1176",0)
                 self.set_option("CONFIG_MACH_REALVIEW_PB11MP",0)
                 self.set_option("CONFIG_REALVIEW_EB_ARM11MP",0)
@@ -295,6 +301,7 @@ class Image:
                 self.set_option("CONFIG_CPU_V6K",0)
                 if "p2v8" not in ver_magic:
                     self.set_option("CONFIG_REALVIEW_HIGH_PHYS_OFFSET",0)
+
 
         for token in ver_magic:
             if token in vermagic_opts:
@@ -350,6 +357,11 @@ class Image:
                     self.set_option("CONFIG_ARM_PATCH_PHYS_VIRT",0)
 
             if release == "ARMv7":
+                if self.kernel >= "linux-4.0":
+                    self.set_option("CONFIG_ARCH_MULTIPLATFORM",2)
+                    self.set_option("CONFIG_ARCH_VIRT",2)
+                    self.set_option("CONFIG_ARCH_MULTI_V7",2)
+                self.set_option("CONFIG_ARCH_MULTI_V6",0)
                 self.set_option("CONFIG_MACH_REALVIEW_PB1176",0)
                 self.set_option("CONFIG_MACH_REALVIEW_PB11MP",0)
                 self.set_option("CONFIG_REALVIEW_EB_ARM11MP",0)
@@ -376,11 +388,12 @@ class Image:
 # we have to compile and if yes set the option to 1 if value > 1
 ########################################################################################
 
-    def set_option_value(self, option, value, overwrite=False):
+    def set_option_value(self, option, value, overwrite=False, vermagic=None):
         if option not in self.kconf.syms.keys():
             print("Option", option, "does not exist")
             return
-        if self.arch == "arm" and option == "GPIOLIB":
+        #if self.arch == "arm" and option == "GPIOLIB" and self.kernel < "linux-4.0" and vermagic != None and "ARMv7" not in vermagic:
+        if self.arch == "arm" and option == "GPIOLIB" and self.kernel < "linux-4.0":
             return
         if isinstance(value, str):
             self.kconf.syms[option].set_value(value)
@@ -416,6 +429,8 @@ class Image:
             else:
                 option = conf_opt
             
+            if option ==  "GIANFAR":
+                return
             if option == "XFRM" and value > 0:
                 option = "INET_XFRM_MODE_TUNNEL"
             
@@ -675,7 +690,7 @@ def def_and_set(kconf,image,kernel,ver_magicz,unknown,endianess,arch,modulez,res
     
     print("Version Magic",ver_magicz)
     
-    img_inst = Image(kconf,image, module_configs, arch)
+    img_inst = Image(kconf,image, module_configs, arch, kernel)
     
     # In case the custom netfilter modules do not exist enable
     # them as part of the FS kernel proper (In general needed by images)
@@ -789,10 +804,23 @@ def def_and_set(kconf,image,kernel,ver_magicz,unknown,endianess,arch,modulez,res
     ### Somehow this option prevents the kernel from booting
     ### the QEMU image in these kernels
     if kernel > "linux-3.10.0":
-        img_inst.set_option("CONFIG_GPIOLIB",0)
+        if kernel >= "linux-4.0" and "ARMv7" in ver_magicz:
+            img_inst.set_option("CONFIG_VIRTIO_PCI", 2)
+            img_inst.set_option("CONFIG_VIRTIO_PCI_LEGACY", 2)
+            img_inst.set_option("CONFIG_VIRTIO_BALOON", 2)
+            img_inst.set_option("CONFIG_VIRTIO_INPUT", 2)
+            img_inst.set_option("CONFIG_VIRTIO_MMIO", 2)
+            img_inst.set_option("CONFIG_VIRTIO_BLK", 2)
+            img_inst.set_option("CONFIG_SCSI_VIRTIO", 2)
+            img_inst.set_option("CONFIG_VIRTIO_NET", 2)
+            img_inst.set_option("CONFIG_VIRTIO_CONSOLE", 2)
+            img_inst.set_option("CONFIG_SERIAL_8250_PCI",2)
+        else:
+            img_inst.set_option("CONFIG_GPIOLIB",0)
 
     img_inst.set_option("CONFIG_VGA_CONSOLE",0)
     img_inst.set_option("CONFIG_VIDEO_IVTV",0)
+    img_inst.set_option("CONFIG_MFD_JANZ_CMODIO",0)
     
     img_inst.set_option("IDE",2, "override")
     img_inst.set_option("CONFIG_BLK_DEV_IDEDISK",2, True)
@@ -805,6 +833,8 @@ def def_and_set(kconf,image,kernel,ver_magicz,unknown,endianess,arch,modulez,res
     ### Annoying debugging printouts for PREEMPT...Disable this
     img_inst.set_option("CONFIG_DEBUG_PREEMPT",0, True)
     
+    # Force vermagic again in case any option has changed the platform
+    # we are compiling for
     img_inst.set_ver_magic(ver_magicz)
     img_inst.set_option("CONFIG_HZ_250",2)
     
@@ -812,6 +842,7 @@ def def_and_set(kconf,image,kernel,ver_magicz,unknown,endianess,arch,modulez,res
         if "ARMv5" in ver_magicz:
             img_inst.set_option("CONFIG_SCSI_SYM53C8XX",2, True)
             img_inst.set_option("CONFIG_SCSI_SYM53C8XX_2",2, True)
+            img_inst.set_option("CONFIG_SERIAL_8250_PCI",2)
         if "CONFIG_ARM_UNWIND" not in seen_opt and "CONFIG_ARM_UNWIND" not in guard_options and kernel < "linux-3.10":
             img_inst.set_option("CONFIG_ARM_UNWIND",0)
         img_inst.set_option("CONFIG_SCSI",2, True)
@@ -823,10 +854,13 @@ def def_and_set(kconf,image,kernel,ver_magicz,unknown,endianess,arch,modulez,res
         img_inst.set_option("CONFIG_MMC_ARMMCI",2,True)
         img_inst.set_option("CONFIG_SMC91X",0,True)
         img_inst.set_option("CONFIG_MMU",2,True)
+        img_inst.set_option("CONFIG_SOUND",0)
     
     if img_inst.arch == "mips" and kernel < "linux-4.0":
         img_inst.set_option("CONFIG_CC_STACKPROTECTOR_REGULAR", 0)
         img_inst.set_option("CONFIG_CC_STACKPROTECTOR_NONE", 2)
+    
+    img_inst.set_option("CONFIG_DEBUG_INFO",2)
     
     if arch == "mips":
         if endianess == "little endian":

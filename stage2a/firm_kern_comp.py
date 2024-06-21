@@ -398,7 +398,7 @@ def patch_kernel(image_dir, kernel):
     if which_patch:
         apply_patch(image_dir, which_patch)
 
-def compile_kernel(image, ds_options, ds_recovery,single_module_dir,s_config, openwrt, kernel, extraversion,modulez,ver_magicz,symbolz,arch,endianess, cross, conf_opts, guard_expr, module_options):
+def compile_kernel(image, ds_options, ds_recovery,single_module_dir,s_config, openwrt, pandawan, kernel, extraversion,modulez,ver_magicz,symbolz,arch,endianess, cross, conf_opts, guard_expr, module_options):
     
     kernel = cu.kernel_prefix + kernel 
     resultdir = cu.result_dir_path + image + "/"
@@ -427,8 +427,14 @@ def compile_kernel(image, ds_options, ds_recovery,single_module_dir,s_config, op
 
     if not ds_recovery:
         print("Running Firmsolo in normal mode")
+        
+        if pandawan:
+            from fix_unknown_syms import fix_unknown_syms
+            fix_unknown_syms(image, image_dir)
+        
         ################## Firmadyne Patches #################
         apply_fdyne_hooks(image_dir,kernel)
+        
 
         ########### Some Hot Fixes ############################
         hot_fixes(image_dir,kernel)
@@ -436,7 +442,7 @@ def compile_kernel(image, ds_options, ds_recovery,single_module_dir,s_config, op
         ######### Patch Configuration files #########
         #print ("Fixing Kconfig files for kernel", image_dir)
         fix_configs(image_dir,kernel)
-    
+
     #print_ioctls(image_dir)
     ####### Create the default cofing file #################
         if arch == "mips":
@@ -507,7 +513,7 @@ def modify_the_vermagic(vermagic, ds_options):
     return vermagic, ds_options
 
 
-def run_the_compilation(image, ds_opt_fl, ds_opt_list, ds_recovery, s_mod_dir, s_config, override_vermagic, openwrt, firmadyne):
+def run_the_compilation(image, ds_opt_fl, ds_opt_list, ds_recovery, s_mod_dir, s_config, override_vermagic, openwrt, firmadyne, pandawan):
 
     ### This for DSLC... Are we in DSLC mode or running 
     if ds_recovery < 0:
@@ -525,7 +531,15 @@ def run_the_compilation(image, ds_opt_fl, ds_opt_list, ds_recovery, s_mod_dir, s
 
     which_info = ["kernel","extraversion","modules","vermagic","symbols","arch","endian","cross","options","guards", "module_options"]
     info = cu.get_image_info(image,which_info)
-    
+
+    if pandawan:
+        try:
+            which_info = ["pandawan"]
+            temp = cu.get_image_info(image, which_info)
+            ds_options += temp[0]
+        except:
+            pass
+
     dslc = []
     try:
         which_info = ["dslc"]
@@ -534,21 +548,20 @@ def run_the_compilation(image, ds_opt_fl, ds_opt_list, ds_recovery, s_mod_dir, s
     except:
         ### The image does not have any extra options from dslc
         pass
-    
+
     if dslc != None:
        ds_options += dslc
-
+    
     if firmadyne:
-        firma_dslc = []
         try:
             which_info = ["fdyne_dslc"]
             temp = cu.get_image_info(image, which_info)
-            fdyne_dslc = temp[0]
+            ds_options += temp[0]
         except:
             print("The image does not have any DSLC solutions for Firmadyne experiments")
             ### The image does not have any extra options from dslc
             pass
-        ds_options += fdyne_dslc
+    
 
     # Kernel, Extraversion, Version Magic
     print("Vermagic", info[3])
@@ -556,7 +569,7 @@ def run_the_compilation(image, ds_opt_fl, ds_opt_list, ds_recovery, s_mod_dir, s
         info[3], ds_options = modify_the_vermagic(info[3], ds_options)
 
     print(info[0],info[1],info[5],info[3],info[7])
-    compile_kernel(image,ds_options,ds_recovery,s_mod_dir,s_config, openwrt,*info)
+    compile_kernel(image,ds_options,ds_recovery,s_mod_dir,s_config, openwrt, pandawan, *info)
 
 if __name__ == "__main__":
     parser = argp.ArgumentParser(description='Compile the FS kernel for an image')
@@ -569,6 +582,7 @@ if __name__ == "__main__":
     parser.add_argument('-o','--override_vermagic',help='Specify this option to modify the vermagic during KCRE. Used by DSLC', action = 'store_true')
     parser.add_argument('-w','--openwrt',help='Specify this option to enable the MIPS OpenWRT patch', action = 'store_true')
     parser.add_argument('-e','--firmadyne',help='Include the DSLC fixes for the Firmadyne experiments', action = 'store_true')
+    parser.add_argument('-p','--pandawan',help='Add the pandawan instrumentation', action = 'store_true')
     
     res = parser.parse_args()
     image = res.image
@@ -580,5 +594,6 @@ if __name__ == "__main__":
     override_vermagic = res.override_vermagic
     openwrt = res.openwrt
     firmadyne = res.firmadyne
+    pandawan = res.pandawan
     
-    run_the_compilation(image, ds_opt_fl, ds_opt_list, ds_recovery, s_mod_dir, s_config, override_vermagic, openwrt, firmadyne)
+    run_the_compilation(image, ds_opt_fl, ds_opt_list, ds_recovery, s_mod_dir, s_config, override_vermagic, openwrt, firmadyne, pandawan)

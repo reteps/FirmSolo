@@ -116,14 +116,14 @@ class Emulate():
         except:
             print("Something went bad")
             return None
-        #if crashing_module == "kernel":
-            #for ln in error_data:
-                #func_addresses = re.findall("(\[\<.*\>\])", ln)
-                #if func_addresses:
-                    #address = ["0x" + ln.split()[0].strip("[<>]")]
-                    #crashing_module = self.static_find_crashing_mod(module_data, address)
-                    #if crashing_module != "kernel":
-                        #break
+        if crashing_module == "kernel" or crashing_module == "":
+            for ln in error_data:
+                func_addresses = re.findall("(\[\<.*\>\])", ln)
+                if func_addresses:
+                    address = ["0x" + func_addresses[0].split()[0].strip("[<>]")]
+                    crashing_module = self.static_find_crashing_mod(module_data, address)
+                    if crashing_module != "kernel" and crashing_module != "":
+                        break
         
         if crashing_module and crashing_module != "kernel" and crashing_module != current_module:
             return crashing_module
@@ -292,12 +292,12 @@ class Emulate():
         try:
             self.child.sendline(cmd)
             self.child.expect(['# ',pexpect.EOF], timeout=90)
-            result = self.child.before.decode("utf-8")
+            result = self.child.before.decode("utf-8", errors='ignore')
             #print(result)
         except:
             #### We had a timeout which means the module caused something bad
             #### So lets remove it
-            result = self.child.before.decode("utf-8")
+            result = self.child.before.decode("utf-8", errors='ignore')
             if not "Oops" in result and not "Kernel panic" in result:
                 result = "ModuleTimedOut"
 
@@ -701,9 +701,13 @@ class Emulate():
             iface = ""
             blk_dev = "/dev/hda"
             tty = "ttyS0"
+            id = ""
+            device = ""
         elif self.arch == "arm":
             qemu = "qemu-system-arm"
             rootfs = cu.fs_dir + self.image + "/rootfs_arm.qcow2"
+            id = ""
+            device = ""
             if "ARMv5" in self.vermagic:
                 machine = "versatilepb"
                 cpu = ""
@@ -715,11 +719,19 @@ class Emulate():
                 iface = "if=sd"
                 blk_dev = "/dev/mmcblk0"
             else:
-                machine = "realview-pbx-a9"
-                cpu = "-cpu cortex-a9"
-                bak_machine = "realview-pb-a8"
-                iface = "if=sd"
-                blk_dev = "/dev/mmcblk0"
+                if kernel >= "linux-4.0":
+                    machine = "virt"
+                    iface = "if=none"
+                    blk_dev = "/dev/vda"
+                    cpu = ""
+                    id = "id=rootfs"
+                    device="-device virtio-blk-device,drive=rootfs"
+                else:
+                    machine = "realview-pbx-a9"
+                    cpu = "-cpu cortex-a9"
+                    bak_machine = "realview-pb-a8"
+                    iface = "if=sd"
+                    blk_dev = "/dev/mmcblk0"
             tty = "ttyAMA0"
         
         print("Rootfs used is", rootfs)
@@ -727,22 +739,31 @@ class Emulate():
         self.backup_cmd = None
         if self.arch == "mips":
             #cmd = qemu + " -kernel " + resultdir  + "vmlinux -drive file=" + rootfs + ",file.locking=off,index=0,media=disk  -append \"root=/dev/hda rw console=ttyS0 log_buf_len=100M firmadyne.reboot=0 firmadyne.devfs=0 firmadyne.execute=0 firmadyne.procfs=0 firmadyne.syscall=0 \" -cpu 34Kf -nographic -M malta -m 256M"
-            self.cmd = qemu + " -kernel " + self.resultdir  + "vmlinux -drive file=" + rootfs + ",index=0,media=disk,file.locking=off  -append \"root=/dev/hda rootwait rw console=ttyS0 log_buf_len=100M fdyne_reboot=0 fdyne_devfs=0 fdyne_execute=0 firmadyne.procfs=0 fdyne_syscall=0 firmsolo=1 \" -cpu 34Kf -nographic -M malta -m 256M"
-        elif self.arch == "arm" and "ARMv5" in self.vermagic:
-            self.cmd = "{} -kernel {}zImage -drive file={},if=scsi,file.locking=off -append \"root=/dev/sda rootwait rw console=ttyAMA0 log_buf_len=10M fdyne_reboot=0 firmadyne.devfs=0 fdyne_execute=0 firmadyne.procfs=0 fdyne_syscall=0 firmsolo=1 mem=256M \" -M {} -m 256M -nographic".format(qemu,self.resultdir,rootfs,machine)
-        elif self.arch == "arm" and "ARMv6" in self.vermagic:
-            self.cmd = "{} -kernel {}zImage -drive file={},if=sd,file.locking=off -append \"root=/dev/mmcblk0 rootwait rw console=ttyAMA0 log_buf_len=10M fdyne_reboot=0 firmadyne.devfs=0 fdyne_execute=0 firmadyne.procfs=0 fdyne_syscall=0 firmsolo=1 mem=256M\" -M {} -cpu arm11mpcore -m 256M -nographic".format(qemu,self.resultdir,rootfs,machine)
+            self.cmd = f"{qemu} -kernel {self.resultdir}vmlinux -drive file={rootfs},index=0,media=disk,file.locking=off {device} -append \"root={blk_dev} rootwait rw console={tty} log_buf_len=100M fdyne_reboot=0 fdyne_devfs=0 fdyne_execute=0 firmadyne.procfs=0 fdyne_syscall=0 firmsolo=1 mem=256M\" {cpu} -nographic -M {machine} -m 256M"
         else:
-            self.cmd = "{} -kernel {}zImage -drive file={},if=sd,file.locking=off -append \"root=/dev/mmcblk0 rootwait rw console=ttyAMA0 log_buf_len=10M fdyne_reboot=0 firmadyne.devfs=1 fdyne_execute=0 firmadyne.procfs=1 fdyne_syscall=0 firmsolo=1 mem=256M\" -M {} -cpu cortex-a9 -m 256M -nographic".format(qemu,self.resultdir,rootfs,machine)
-            self.backup_cmd = "{} -kernel {}zImage -drive file={},if=sd,file.locking=off -append \"root=/dev/mmcblk0 rootwait rw console=ttyAMA0 log_buf_len=10M fdyne_reboot=0 firmadyne.devfs=0 fdyne_execute=0 firmadyne.procfs=0 fdyne_syscall=0 firmsolo=1 mem=256M\" -M realview-pb-a8 -cpu cortex-a9 -m 256M -nographic".format(qemu,self.resultdir,rootfs,machine)
+            if iface != "":
+                iface += ","
+            if id != "":
+                id += ","
+            self.cmd = f"{qemu} -kernel {self.resultdir}zImage -drive file={rootfs},{iface}index=0,media=disk,{id}file.locking=off {device} -append \"root={blk_dev} rootwait rw console={tty} log_buf_len=100M fdyne_reboot=0 fdyne_devfs=0 fdyne_execute=0 firmadyne.procfs=0 fdyne_syscall=0 firmsolo=1 mem=256M\" {cpu} -nographic -M {machine} -m 256M"
+            self.backup_cmd = f"{qemu} -kernel {self.resultdir}zImage -drive file={rootfs},{iface}index=0,media=disk,{id}file.locking=off {device} -append \"root={blk_dev} rootwait rw console={tty} log_buf_len=100M fdyne_reboot=0 fdyne_devfs=0 fdyne_execute=0 firmadyne.procfs=0 fdyne_syscall=0 firmsolo=1 mem=256M\" {cpu} -nographic -M {bak_machine} -m 256M"
+
+            #self.cmd = qemu + " -kernel " + self.resultdir  + "vmlinux -drive file=" + rootfs + ",index=0,media=disk,file.locking=off  -append \"root=/dev/hda rootwait rw console=ttyS0 log_buf_len=100M fdyne_reboot=0 fdyne_devfs=0 fdyne_execute=0 firmadyne.procfs=0 fdyne_syscall=0 firmsolo=1 \" -cpu 34Kf -nographic -M malta -m 256M"
+        #elif self.arch == "arm" and "ARMv5" in self.vermagic:
+            #self.cmd = "{} -kernel {}zImage -drive file={},if=scsi,file.locking=off -append \"root=/dev/sda rootwait rw console=ttyAMA0 log_buf_len=10M fdyne_reboot=0 firmadyne.devfs=0 fdyne_execute=0 firmadyne.procfs=0 fdyne_syscall=0 firmsolo=1 mem=256M \" -M {} -m 256M -nographic".format(qemu,self.resultdir,rootfs,machine)
+        #elif self.arch == "arm" and "ARMv6" in self.vermagic:
+            #self.cmd = "{} -kernel {}zImage -drive file={},if=sd,file.locking=off -append \"root=/dev/mmcblk0 rootwait rw console=ttyAMA0 log_buf_len=10M fdyne_reboot=0 firmadyne.devfs=0 fdyne_execute=0 firmadyne.procfs=0 fdyne_syscall=0 firmsolo=1 mem=256M\" -M {} -cpu arm11mpcore -m 256M -nographic".format(qemu,self.resultdir,rootfs,machine)
+        #else:
+            #self.cmd = "{} -kernel {}zImage -drive file={},if=sd,file.locking=off -append \"root=/dev/mmcblk0 rootwait rw console=ttyAMA0 log_buf_len=10M fdyne_reboot=0 firmadyne.devfs=0 fdyne_execute=0 firmadyne.procfs=0 fdyne_syscall=0 firmsolo=1 mem=256M\" -M {} -cpu cortex-a9 -m 256M -nographic".format(qemu,self.resultdir,rootfs,machine)
+            #self.backup_cmd = "{} -kernel {}zImage -drive file={},if=sd,file.locking=off -append \"root=/dev/mmcblk0 rootwait rw console=ttyAMA0 log_buf_len=10M fdyne_reboot=0 firmadyne.devfs=0 fdyne_execute=0 firmadyne.procfs=0 fdyne_syscall=0 firmsolo=1 mem=256M\" -M realview-pb-a8 -cpu cortex-a9 -m 256M -nographic".format(qemu,self.resultdir,rootfs,machine)
             
         print("QEMU CMD", self.cmd)   
         
-        self.qemu_opts = [machine, cpu, iface, blk_dev, tty, bak_machine]
+        self.qemu_opts = [machine, cpu, iface, blk_dev, id, device, tty, bak_machine]
 
         self.qemu_opt_dict = {"machine": self.qemu_opts[0],
                 "cpu" : self.qemu_opts[1], "iface" : self.qemu_opts[2],
-                "blk_dev" : self.qemu_opts[3], "tty" : self.qemu_opts[4]}
+                "blk_dev" : self.qemu_opts[3], "id": self.qemu_opts[4], "device": self.qemu_opts[5], "tty" : self.qemu_opts[6]}
 
 #####################################################################
 def only_modprobe(mod,modules):

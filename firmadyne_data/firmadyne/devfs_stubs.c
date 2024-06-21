@@ -13,18 +13,18 @@
 #include "firmadyne.h"
 
 #define STUB_ENTRIES \
-	DEVICE(acos_nat_cli, 100, 0, open, read, write, close, acos_ioctl) \
-	DEVICE(brcmboard, 206, 0, open, read, write, close, ioctl) \
-	DEVICE(dsl_cpe_api, 107, 0, open, read, write, close, ioctl) \
-	DEVICE(gpio, 224, 0, open, read, write, close, ioctl) \
-	DEVICE(nvram, 111, 0, open, read, write, close, ioctl) \
-	DEVICE(pib, 31, 3, open, read, write, close, ioctl) \
-	DEVICE(sc_led, 225, 0, open, read, write, close, ioctl) \
-	DEVICE(tca0, 183, 0, open, read, write, close, ioctl) \
-	DEVICE(ticfg, 0, 0, open, read, write, close, ioctl) \
-	DEVICE(watchdog, MISC_MAJOR, WATCHDOG_MINOR, open, read, write, close, ioctl) \
-	DEVICE(wdt, 253, 0, open, read, write, close, ioctl) \
-	DEVICE(zybtnio, 220, 0, open, read, write, close, ioctl)
+	DEVICE(acos_nat_cli, 100, 0, open, read, write, close, acos_ioctl, enable_device & 1) \
+	DEVICE(brcmboard, 206, 0, open, read, write, close, ioctl, enable_device & 2) \
+	DEVICE(dsl_cpe_api, 107, 0, open, read, write, close, ioctl,enable_device & 4) \
+	DEVICE(gpio, 224, 0, open, read, write, close, ioctl, enable_device & 8) \
+	DEVICE(nvram, 111, 0, open, read, write, close, ioctl, enable_device & 16) \
+	DEVICE(pib, 31, 3, open, read, write, close, ioctl, enable_device & 32) \
+	DEVICE(sc_led, 225, 0, open, read, write, close, ioctl, enable_device & 64) \
+	DEVICE(tca0, 183, 0, open, read, write, close, ioctl, enable_device & 128) \
+	DEVICE(ticfg, 0, 0, open, read, write, close, ioctl, enable_device & 256) \
+	DEVICE(watchdog, MISC_MAJOR, WATCHDOG_MINOR, open, read, write, close, ioctl, enable_device & 512) \
+	DEVICE(wdt, 253, 0, open, read, write, close, ioctl, enable_device & 1024) \
+	DEVICE(zybtnio, 220, 0, open, read, write, close, ioctl, enable_device & 2048)
 
 static long acos_ioctl(struct file *file, unsigned int cmd, unsigned long arg_ptr) {
 	int retval = 0;
@@ -128,33 +128,36 @@ static int acl(struct device *dev, struct kobj_uevent_env *env) {
 }
 
 
-#define DEVICE(a, b, c, d, e, f, g, h) \
-	static dev_t a##_devno = MKDEV(b, c); \
-	struct cdev a##_cdev; \
-	static struct class *a##_class; \
-	static struct device *a##_dev; \
-	static struct file_operations a##_fops = { \
-		.owner		= THIS_MODULE, \
-		.open		= d, \
-		.read		= e, \
-		.write		= f, \
-		.release	= g, \
-		.unlocked_ioctl	= h, \
-	};\
-	EXPORT_SYMBOL(a##_cdev);
+#define DEVICE(a, b, c, d, e, f, g, h, k) \
+		static dev_t a##_devno = MKDEV(b, c); \
+		struct cdev a##_cdev; \
+		static struct class *a##_class; \
+		static struct device *a##_dev; \
+		static struct file_operations a##_fops = { \
+			.owner		= THIS_MODULE, \
+			.open		= d, \
+			.read		= e, \
+			.write		= f, \
+			.release	= g, \
+			.unlocked_ioctl	= h, \
+		};\
+		EXPORT_SYMBOL(a##_cdev);
 
 	STUB_ENTRIES
 #undef DEVICE
 
 int register_devfs_stubs(void) {
 	int ret = 0;
+	int create_dev = 0;
 
 	if (!devfs) {
 		return ret;
 	}
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,27)) && (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,19))
-#define DEVICE(a, b, c, d, e, f, g, h) \
+#define DEVICE(a, b, c, d, e, f, g, h, k) \
+	create_dev = k;\
+	if (create_dev > 0) {\
 	if ((ret = register_chrdev_region(a##_devno, 1, #a)) < 0) { \
 		printk(KERN_WARNING MODULE_NAME": Cannot register character device: %s, 0x%x, 0x%x!\n", #a, MAJOR(a##_devno), MINOR(a##_devno)); \
 		goto a##_out; \
@@ -184,13 +187,16 @@ int register_devfs_stubs(void) {
 		unregister_chrdev_region(a##_devno, 1); \
 		ret = PTR_ERR(a##_dev); \
 	} \
+	} \
 a##_out:
 
 	STUB_ENTRIES
 #undef DEVICE
 
 #elif (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,19))
-#define DEVICE(a, b, c, d, e, f, g, h) \
+#define DEVICE(a, b, c, d, e, f, g, h, k) \
+	create_dev = k;\
+	if (create_dev > 0) {\
 	if ((ret = register_chrdev_region(a##_devno, 1, #a)) < 0) { \
 		printk(KERN_WARNING MODULE_NAME": Cannot register character device: %s, 0x%x, 0x%x!\n", #a, MAJOR(a##_devno), MINOR(a##_devno)); \
 		goto a##_out; \
@@ -218,13 +224,17 @@ a##_out:
 		unregister_chrdev_region(a##_devno, 1); \
 		ret = PTR_ERR(a##_dev); \
 	} \
+	} \
 a##_out:
 
 	STUB_ENTRIES
 #undef DEVICE
 
 #else
-#define DEVICE(a, b, c, d, e, f, g, h) \
+#define DEVICE(a, b, c, d, e, f, g, h, k) \
+	create_dev = k;\
+	printk(KERN_INFO MODULE_NAME": Trying to register: %s, with enable_device %d\n", #a, create_dev); \
+	if (create_dev > 0) {\
 	if ((ret = register_chrdev_region(a##_devno, 1, #a)) < 0) { \
 		printk(KERN_WARNING MODULE_NAME": Cannot register character device: %s, 0x%x, 0x%x!\n", #a, MAJOR(a##_devno), MINOR(a##_devno)); \
 		goto a##_out; \
@@ -254,6 +264,7 @@ a##_out:
 		unregister_chrdev_region(a##_devno, 1); \
 		ret = PTR_ERR(a##_dev); \
 	} \
+	}\
 a##_out:
 
 	STUB_ENTRIES
@@ -264,16 +275,20 @@ a##_out:
 
 
 void unregister_devfs_stubs(void) {
+	int create_dev = 0;
+
 	if (!devfs) {
 		return;
 	}
 
-#define DEVICE(a, b, c, d, e, f, g, h) \
+#define DEVICE(a, b, c, d, e, f, g, h, k) \
+	create_dev = k;\
+	if (create_dev > 0) {\
 	device_destroy(a##_class, a##_devno); \
 	cdev_del(&a##_cdev); \
 	class_destroy(a##_class); \
-	unregister_chrdev_region(a##_devno, 1);
-
+	unregister_chrdev_region(a##_devno, 1);\
+	}
 	STUB_ENTRIES
 #undef DEVICE
 }

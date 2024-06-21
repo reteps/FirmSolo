@@ -249,7 +249,7 @@ do_execve = """
                 }
         }
 
-	if (syscall & LEVEL_ANALYZE &&
+	if (fdyne_syscall & LEVEL_ANALYZE &&
 		strcmp("khelper", current->comm) &&
 		strcmp("rcS", current->comm) &&
 		strcmp("preInit.sh", current->comm) &&
@@ -257,17 +257,17 @@ do_execve = """
 		strcmp("run_service.sh", current->comm) &&
 		argv[0][0] != '[') // generally compare line
 	{
-		printk("\n\n[ANALYZE] [PID: %d (%s)]:", task_pid_nr(current), current->comm);
-		for (i = 0; i >= 0 && argv[i]; i++) {
-			printk(KERN_CONT " %s", argv[i]);
+		printk("\\n\\n[ANALYZE] [PID: %d (%s)]:", current->pid, current->comm);
+		for (j = 0; j >= 0 && argv[j]; j++) {
+			printk(KERN_INFO " %s", argv[j]);
 		}
 
-		printk(KERN_CONT "\nenvp:");
-		for (i = 0; i >= 0 && envp[i]; i++) {
-			printk(KERN_CONT " %s", envp[i]);
+		printk(KERN_INFO "\\nenvp:");
+		for (j = 0; j >= 0 && envp[j]; j++) {
+			printk(KERN_INFO " %s", envp[j]);
 		}
 
-		printk("\n\n");
+		printk("\\n\\n");
 	}
 
 """
@@ -302,25 +302,25 @@ do_execve_common = """
                 }
         }
 
-	if (syscall & LEVEL_ANALYZE &&
+	if (fdyne_syscall & LEVEL_ANALYZE &&
 		strcmp("khelper", current->comm) &&
 		strcmp("rcS", current->comm) &&
 		strcmp("preInit.sh", current->comm) &&
 		strcmp("network.sh", current->comm) &&
 		strcmp("run_service.sh", current->comm) &&
-		argv[0][0] != '[') // generally compare line
+		argv.ptr.native[0][0] != '[') // generally compare line
 	{
-		printk("\n\n[ANALYZE] [PID: %d (%s)]:", task_pid_nr(current), current->comm);
-		for (i = 0; i >= 0 && argv[i]; i++) {
-			printk(KERN_CONT " %s", argv[i]);
+		printk("\\n\\n[ANALYZE] [PID: %d (%s)]:", current->pid, current->comm);
+		for (j = 0; j >= 0 && argv.ptr.native[j]; j++) {
+			printk(KERN_INFO " %s", argv.ptr.native[j]);
 		}
 
-		printk(KERN_CONT "\nenvp:");
-		for (i = 0; i >= 0 && envp[i]; i++) {
-			printk(KERN_CONT " %s", envp[i]);
+		printk(KERN_INFO "\\nenvp:");
+		for (j = 0; j >= 0 && envp.ptr.native[j]; j++) {
+			printk(KERN_INFO " %s", envp.ptr.native[j]);
 		}
 
-		printk("\n\n");
+		printk("\\n\\n");
 	}
 
 """
@@ -540,6 +540,18 @@ hooks_dict = {
 
 
 main_template = """
+unsigned int enable_device;
+static int __init set_enable_device(char *str)
+{
+        get_option(&str, &enable_device);
+        // This is a bit value till 2048, e.g., 10000000001
+        enable_device = enable_device % 4096;
+        return 0;
+}
+__setup("enable_device=", set_enable_device);
+
+EXPORT_SYMBOL(enable_device);
+
 unsigned int fdyne_syscall;
 static int __init set_fdyne_syscall(char *str)
 {
@@ -589,7 +601,7 @@ firmae_template = """
 		if (!strncmp(param, "FIRMAE_KERNEL=", val - param) &&
 				!strncmp(val, "true", 4))
 		{
-			printk("found FIRMAE_KERNEL=t\n");
+			printk("found FIRMAE_KERNEL=t\\n");
 			for (i = 0; envp_init[i]; i++)
 			{
 				if (i == MAX_INIT_ENVS)
@@ -600,7 +612,7 @@ firmae_template = """
 				if (!strncmp(envp_init[i], "LD_PRELOAD=", 11))
 					break;
 			}
-			printk("set the LD_PRELOAD=/firmadyne/libnvram_ioctl.so\n");
+			printk("set the LD_PRELOAD=/firmadyne/libnvram_ioctl.so\\n");
 			envp_init[i] = "LD_PRELOAD=/firmadyne/libnvram_ioctl.so";
 		}
 """
@@ -734,10 +746,10 @@ def fix_main():
                 index += 1
 
     firmae_template_fixed = fix_template(firmae_template)
-    for i, line in enumerate(lines[index:]):
+    for i, line in enumerate(lines):
         if "envp_init[i] = param;" in line:
             for ln in firmae_template_fixed:
-                lines.insert(i, ln)
+                lines.insert(i+1, ln)
                 i+=1
             break    
 
