@@ -90,23 +90,29 @@ class Image():
             subdir = f"v{vers}.x"
 
         path = Path(kernel_dir)
-        tar_path = Path(f"{cu.tar_dir}/{kernel}.tar.gz")
-        
-        if not path.exists() and not tar_path.exists():
-            remote_tar_file = "{}{}/{}.tar.gz".format(kernel_org, subdir,
-                                                      kernel)
-            local_tar_file = "{}/{}.tar.gz".format(cu.tar_dir, kernel)
-            cmd = "wget {} -O {}".format(remote_tar_file, local_tar_file)
-            print("Kernel", self.kernel, "does not exist in local repository...")
-            print ("Downloading kernel from url:", remote_tar_file)
-            try:
-                res = subprocess.check_output(cmd, shell = True)
-            except:
-                print(traceback.format_exc())
-                return False
+
+        if not (path.exists()):
+            remote_tar_file = "{}{}/{}.tar.gz".format(kernel_org, subdir, kernel)
+            success = self.download_and_print(kernel, remote_tar_file)
+            if not success:
+                remote_tar_file = f"https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/snapshot/{kernel}.tar.gz"
+                success = self.download_and_print(kernel, remote_tar_file)
+            return success
 
         return True
 
+    def download_and_print(self, kernel, remote_tar_file):
+        
+        local_tar_file = "{}/{}.tar.gz".format(cu.tar_dir, kernel)
+        cmd = "wget {} -O {}".format(remote_tar_file, local_tar_file)
+        print("Kernel", self.kernel, "does not exist in local repository...")
+        print ("Downloading kernel from url:", remote_tar_file)
+        try:
+            res = subprocess.check_output(cmd, shell = True)
+        except:
+            print(traceback.format_exc())
+            return False
+        return True
     ### Function to get the kernel version and the extraversion used by
     ### the image
     def get_kernel_info(self,kernel):
