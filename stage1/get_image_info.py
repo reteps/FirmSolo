@@ -626,7 +626,7 @@ class Kernel():
         k_dir = [self.kernel_dir for i in range(len(symbols))]
         data = [list(x) for x in zip(symbols,dict_list,k_dir)]
        
-        res = p.map(gsi.find_definition, tqdm(data))        
+        res = list(tqdm(p.imap(gsi.find_definition, data), total=len(data)))       
         
         ### Now update the dictionary with new entries
         for i,sym in enumerate(symbols):
